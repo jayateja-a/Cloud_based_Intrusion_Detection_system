@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anomaly Logs</title>
+<script src="https://cdn.tailwindcss.com"></script> <!-- Consider replacing in production -->
+<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="p-6 bg-gray-100">
+<div x-data="{
+            anomalies: [],
+            predictionCounts: {},
+            search: '',
+            pieChartInstance: null,
+ 
+            fetchData() {
+                fetch('/api/anomalies')
+                    .then(response => response.json())
+                    .then(data => {
+                        this.anomalies = data.anomalies;
+                        this.predictionCounts = this.normalizePredictionCounts(data.prediction_counts);
+                        console.log('Prediction Counts:', this.predictionCounts);
+                        this.createPieChart();
+                    })
+                    .catch(error => console.error('Error fetching data:', error));
+            },
+ 
+            normalizePredictionCounts(counts) {
+                let normalized = {};
+                for (const key in counts) {
+                    normalized[String(parseInt(key))] = counts[key]; // Convert float keys (0.0, 1.0) to '0', '1'
+                }
+                return normalized;
+            },
+ 
+            get filteredAnomalies() {
+                return this.anomalies.filter(anomaly => 
+                    Object.values(anomaly).some(value => {
+                        let stringValue = String(value).toLowerCase();
+ 
+                        // Convert 0 & 1 to 'normal' & 'attack' for searching
+                        if (anomaly.Prediction == '1') stringValue += ' attack';
+                        if (anomaly.Prediction == '0') stringValue += ' normal';
+ 
+                        return stringValue.includes(this.search.toLowerCase());
+                    })
+                );
+            },
+ 
+            createPieChart() {
+                const ctx = document.getElementById('predictionChart').getContext('2d');
+ 
+                // Destroy previous chart instance if it exists
+                if (this.pieChartInstance) {
+                    this.pieChartInstance.destroy();
+                }
+ 
+                this.pieChartInstance = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: ['Attack (1)', 'Normal (0)'],
+                        datasets: [{
+                            data: [this.predictionCounts['1'] || 0, this.predictionCounts['0'] || 0],
+                            backgroundColor: ['#ff6384', '#36a2eb'],
+                            hoverBackgroundColor: ['#ff6384', '#36a2eb']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { position: 'top' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(tooltipItem) {
+                                        return tooltipItem.label + ': ' + tooltipItem.raw + ' logs';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }" x-init="fetchData()">
+ 
+        <!-- Pie Chart -->
+<div class="mb-6">
+<h2 class="text-xl font-semibold mb-4">Prediction Distribution</h2>
+<div class="w-full max-w-md mx-auto">
+<canvas id="predictionChart" class="w-full h-64"></canvas>
+</div>
+</div>
+ 
+        <!-- Search Bar -->
+<input type="text" x-model="search" placeholder="Search all columns..."
+               class="mb-4 p-2 border rounded w-full">
+ 
+        <!-- Display a loading message while fetching data -->
+<template x-if="anomalies.length === 0">
+<div class="text-center text-gray-500">Loading...</div>
+</template>
+ 
+        <!-- Table of anomalies -->
+<table class="w-full bg-white shadow-md rounded-lg mb-6" x-show="anomalies.length > 0">
+<thead>
+<tr class="bg-gray-200">
+<th class="p-2">Anomaly ID</th>
+<th class="p-2">Timestamp</th>
+<th class="p-2">Prediction</th>
+<th class="p-2">Protocol</th>
+<th class="p-2">Service</th>
+<th class="p-2">Duration</th>
+<th class="p-2">Data Bytes</th>
+</tr>
+</thead>
+<tbody>
+<template x-for="(anomaly, index) in filteredAnomalies" :key="index">
+<tr class="border-t">
+<td class="p-2" x-text="anomaly.AnomalyID"></td>
+<td class="p-2" x-text="anomaly.Timestamp"></td>
+<td class="p-2 font-bold" x-text="anomaly.Prediction == '1' ? 'Attack' : 'Normal'"></td>
+<td class="p-2" x-text="anomaly.proto"></td>
+<td class="p-2" x-text="anomaly.service"></td>
+<td class="p-2" x-text="anomaly.dur"></td>
+<td class="p-2" x-text="anomaly.dbytes"></td>
+</tr>
+</template>
+</tbody>
+</table>
+</div>
+</body>
+</html>
